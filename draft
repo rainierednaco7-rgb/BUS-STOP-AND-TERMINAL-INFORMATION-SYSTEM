@@ -1,0 +1,253 @@
+package com.example.stopngo
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+
+class DatabaseHelper(context: Context) :
+    SQLiteOpenHelper(context, "stopngo.db", null, 4) {
+
+    override fun onCreate(db: SQLiteDatabase) {
+
+        // USERS TABLE
+        db.execSQL("""
+    CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        full_name TEXT,
+        username TEXT UNIQUE,
+        password TEXT,
+        role TEXT
+    )
+""")
+
+// DEFAULT ADMIN ACCOUNT
+        db.execSQL("""
+    INSERT OR IGNORE INTO users (username, password, role)
+    VALUES ('admin', 'admin123', 'Admin')
+""")
+
+
+        // BUS ROUTES TABLE
+        db.execSQL("""
+            CREATE TABLE routes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bus_number TEXT,
+                origin TEXT,
+                destination TEXT,
+                via TEXT,
+                fare REAL,
+                interval_minutes INTEGER
+            )
+        """)
+
+        // BUS STOPS TABLE
+        db.execSQL("""
+            CREATE TABLE stops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stop_name TEXT,
+                location TEXT
+            )
+        """)
+
+        // BUS SCHEDULES TABLE
+        db.execSQL("""
+            CREATE TABLE schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                first_trip TEXT,
+                last_trip TEXT,
+                interval_minutes INTEGER
+            )
+        """)
+
+        // SAMPLE BUS ROUTE
+        val route = ContentValues().apply {
+            put("bus_number", "681 1425")
+            put("origin", "Batangas Terminal")
+            put("destination", "Nasugbu Terminal")
+            put("via", "Palico Terminal")
+            put("fare", 120.00)
+            put("interval_minutes", 30)
+        }
+
+        db.insert("routes", null, route)
+
+        // SAMPLE BUS STOPS
+        val stopNames = listOf(
+            "Batangas Terminal",
+            "Palico Terminal",
+            "Nasugbu Terminal"
+        )
+
+        for (name in stopNames) {
+            val values = ContentValues().apply {
+                put("stop_name", name)
+                put("location", name)
+            }
+
+            db.insert("stops", null, values)
+        }
+
+        // SAMPLE SCHEDULE
+        val schedule = ContentValues().apply {
+            put("first_trip", "3:30 AM")
+            put("last_trip", "7:30 PM")
+            put("interval_minutes", 30)
+        }
+
+        db.insert("schedules", null, schedule)
+    }
+
+
+    override fun onUpgrade(
+        db: SQLiteDatabase,
+        oldVersion: Int,
+        newVersion: Int
+    ) {
+        if (oldVersion < 2) {
+            db.execSQL("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT,
+                role TEXT
+            )
+        """)
+        }
+
+        if (oldVersion < 3) {
+            db.execSQL("""
+            INSERT OR IGNORE INTO users (username, password, role)
+            VALUES ('admin', 'admin123', 'Admin')
+        """)
+        }
+        if (oldVersion < 4) {
+            db.execSQL(
+                "ALTER TABLE users ADD COLUMN full_name TEXT"
+            )
+        }
+    }
+
+
+
+    // USER LOGIN
+    fun login(username: String, password: String): String? {
+        val db = readableDatabase
+
+        val cursor = db.rawQuery(
+            """
+        SELECT role FROM users
+        WHERE username = ? AND password = ?
+        """,
+            arrayOf(username.trim(), password)
+        )
+
+        val role = if (cursor.moveToFirst()) {
+            cursor.getString(0)
+        } else {
+            null
+        }
+
+        cursor.close()
+        return role
+    }
+
+
+    fun registerPassenger(
+        fullName: String,
+        username: String,
+        password: String
+    ): Boolean {
+        val db = writableDatabase
+
+        val values = ContentValues().apply {
+            put("full_name", fullName.trim())
+            put("username", username.trim())
+            put("password", password)
+            put("role", "Passenger")
+        }
+
+        return try {
+            db.insertOrThrow("users", null, values)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+
+    fun searchRoute(origin: String, destination: String): String {
+        val db = readableDatabase
+
+        val cursor = db.rawQuery(
+            """
+        SELECT bus_number, origin, destination, via, fare, interval_minutes
+        FROM routes
+        WHERE LOWER(origin) = LOWER(?)
+        AND LOWER(destination) = LOWER(?)
+        """,
+            arrayOf(origin.trim(), destination.trim())
+        )
+
+        val result = if (cursor.moveToFirst()) {
+            """
+        BUS ROUTE FOUND!
+
+        Bus Number: ${cursor.getString(0)}
+        Origin: ${cursor.getString(1)}
+        Destination: ${cursor.getString(2)}
+        Via: ${cursor.getString(3)}
+        Fare: ₱${cursor.getDouble(4)}
+        Interval: ${cursor.getInt(5)} minutes
+        """.trimIndent()
+        } else {
+            "No bus route found."
+        }
+
+        cursor.close()
+        return result
+    }
+
+    fun getStops(): String {
+        val db = readableDatabase
+
+        val cursor = db.rawQuery(
+            "SELECT stop_name, location FROM stops",
+            null
+        )
+
+        val result = StringBuilder(
+            "AVAILABLE BUS STOPS AND TERMINALS\n\n"
+        )
+
+        while (cursor.moveToNext()) {
+            val name = cursor.getString(0)
+            val location = cursor.getString(1)
+
+            result.append("📍 $name\n")
+            result.append("Location: $location\n\n")
+        }
+
+        cursor.close()
+        return result.toString()
+    }
+    fun getSchedules(): String {
+        val db = readableDatabase
+
+        val cursor = db.rawQuery(
+            "SELECT first_trip, last_trip, interval_minutes FROM schedules",
+            null
+        )
+
+        val result = StringBuilder("BUS SCHEDULES\n\n")
+
+        while (cursor.moveToNext()) {
+            result.append("First Trip: ${cursor.getString(0)}\n")
+            result.append("Last Trip: ${cursor.getString(1)}\n")
+            result.append("Interval: ${cursor.getInt(2)} minutes\n\n")
+        }
+
+        cursor.close()
+        return result.toString()
+    }
+}
